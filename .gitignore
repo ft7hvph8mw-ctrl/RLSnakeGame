@@ -1,0 +1,42 @@
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ---- Python cache ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.swp
+
+# ---- Environments ----
+.venv/
+env/
+venv/
+ENV/
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+
+# ---- Build / Packaging ----
+build/
+dist/
+*.egg-info/
+
+# ---- Logs ----
+*.log
+
+# ---- Python virtual / internal ----
+*.sqlite3
+*.db
+
+# ---- Checkpoints / Models ----
+*.pth
+*.pt
+models/
+
+# ---- Misc ----
+*.tmp
+*.bak

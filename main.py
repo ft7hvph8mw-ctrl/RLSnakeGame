@@ -38,7 +38,7 @@ class Direction(Enum):
 class SnakeEnv:
     """
     Snake environment with:
-      - grid size 16x16
+      - grid size GRID_SIZE x GRID_SIZE
       - one apple at a time
       - state: flattened grid (0=empty, 1=snake, 2=food)
       - actions: 0=left, 1=straight, 2=right (relative turn)
@@ -50,7 +50,7 @@ class SnakeEnv:
 
         if self.render_enabled:
             pygame.init()
-            pygame.display.set_caption("Snake RL - 16x16")
+            pygame.display.set_caption("Snake RL")
             self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
             self.clock = pygame.time.Clock()
             self.font = pygame.font.SysFont("consolas", 24)
@@ -112,11 +112,18 @@ class SnakeEnv:
                     pygame.quit()
                     raise SystemExit
 
+        # Distance to food BEFORE move
+        head_x, head_y = self.snake[0]
+        if self.food is not None:
+            fx, fy = self.food
+            old_dist = abs(head_x - fx) + abs(head_y - fy)
+        else:
+            old_dist = None
+
         # Update direction from action
         self._update_direction(action)
         self.direction = self.pending_direction
 
-        head_x, head_y = self.snake[0]
         dx, dy = self.direction.value
         new_head = (head_x + dx, head_y + dy)
 
@@ -141,13 +148,25 @@ class SnakeEnv:
         self.snake.insert(0, new_head)
 
         # Check food
+        ate = False
         if self.food is not None and new_head == self.food:
             self.score += 1
-            reward = 10.0
+            reward += 10.0
+            ate = True
             self._place_food()
         else:
-            # Move forward
+            # Move forward without growing
             self.snake.pop()
+
+        # Reward shaping: closer/further to food (only if we didn't just eat)
+        if (not ate) and (old_dist is not None) and (self.food is not None):
+            fx, fy = self.food
+            new_head_x, new_head_y = self.snake[0]
+            new_dist = abs(new_head_x - fx) + abs(new_head_y - fy)
+            if new_dist < old_dist:
+                reward += 0.1     # moved closer
+            elif new_dist > old_dist:
+                reward -= 0.1     # moved farther
 
         # Small living cost
         reward += -0.01
@@ -403,11 +422,7 @@ def load_checkpoint(agent: DQNAgent):
     return episodes_trained
 
 
-def train():
-    # Ask user if they want visuals
-    choice = input("Enable visuals? (y/n): ").strip().lower()
-    render = choice == "y"
-
+def train(render: bool):
     # episodes_to_run = how many *new* episodes this run will train
     episodes_to_run = 2000
     max_steps = 1000
@@ -474,7 +489,7 @@ def train():
             steps += 1
 
         print(
-            f"Episode {ep_idx+1} | "
+            f"[TRAIN] Episode {ep_idx+1} | "
             f"Score={env.score} | "
             f"Reward={total_reward:.2f} | "
             f"Epsilon={epsilon:.3f}"
@@ -491,5 +506,71 @@ def train():
         pygame.quit()
 
 
+def eval_policy(render: bool):
+    """
+    Load checkpoint and run greedy (epsilon=0) episodes without training.
+    """
+    max_steps = 1000
+    episodes_eval = 100
+
+    env = SnakeEnv(render=render, fps=60)
+    state_dim = env._get_state().shape[0]
+    action_dim = 3
+
+    agent = DQNAgent(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        lr=1e-3,
+        gamma=0.99,
+        batch_size=128,
+        buffer_capacity=100_000,
+        target_update_steps=1000,
+    )
+
+    episodes_trained_before = load_checkpoint(agent)
+    if episodes_trained_before == 0:
+        print("No trained checkpoint found; nothing to eval.")
+        if env.render_enabled:
+            pygame.quit()
+        return
+
+    for ep in range(episodes_eval):
+        state = env.reset()
+        total_reward = 0.0
+        done = False
+        steps = 0
+
+        while not done and steps < max_steps:
+            # pure greedy: epsilon = 0
+            action = agent.select_action(state, epsilon=0.0)
+            next_state, reward, done = env.step(action)
+
+            hud = (
+                f"[EVAL] Ep:{ep+1}/{episodes_eval} | "
+                f"Score:{env.score}"
+            )
+            if render:
+                env.render(extra_text=hud)
+
+            state = next_state
+            total_reward += reward
+            steps += 1
+
+        print(
+            f"[EVAL] Episode {ep+1}/{episodes_eval} | "
+            f"Score={env.score} | Reward={total_reward:.2f}"
+        )
+
+    if env.render_enabled:
+        pygame.quit()
+
+
 if __name__ == "__main__":
-    train()
+    mode = input("Mode (train/eval): ").strip().lower()
+    choice = input("Enable visuals? (y/n): ").strip().lower()
+    render = choice == "y"
+
+    if mode == "eval":
+        eval_policy(render=render)
+    else:
+        train(render=render)
